@@ -1,0 +1,47 @@
+# Python
+__pycache__/
+*.py[cod]
+.pytest_cache/
+.mypy_cache/
+.ruff_cache/
+*.log
+
+# Virtual environments
+.venv/
+venv/
+
+# Environment files
+.env
+.env.*
+!.env.example
+
+# Local databases and generated storage
+chroma_db/
+uploads/
+extracted_text/
+chunks/
+data/
+*.sqlite3
+
+# OS and editor
+.DS_Store
+Thumbs.db
+.vscode/
+.idea/
+
+# Frontend
+node_modules/
+dist/
+dist-electron/
+.vite/
+.npm-cache/
+.electron-cache/
+build/
+release/
+*.spec
+
+# Electron / packaging
+*.exe
+*.msi
+*.dmg
+*.AppImage

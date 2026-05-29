@@ -1,0 +1,14 @@
+{
+  "name": "localmind",
+  "version": "0.1.0",
+  "private": true,
+  "scripts": {
+    "dev": "npm.cmd run dev:all",
+    "dev:all": "frontend\\node_modules\\.bin\\concurrently.cmd -k -n backend,frontend -c green,cyan \"npm.cmd run dev:backend\" \"npm.cmd run dev:frontend\"",
+    "dev:backend": "powershell -NoProfile -ExecutionPolicy Bypass -Command \"Set-Location backend; . .\\.venv\\Scripts\\Activate.ps1; uvicorn app.main:app --reload --host 127.0.0.1 --port 8000\"",
+    "dev:frontend": "npm.cmd --prefix frontend run dev",
+    "build:backend": "powershell -NoProfile -ExecutionPolicy Bypass -File backend\\build_backend.ps1",
+    "package:win": "npm.cmd run build:backend && npm.cmd --prefix frontend run package:win",
+    "dist:win": "npm.cmd run build:backend && npm.cmd --prefix frontend run dist:win"
+  }
+}
