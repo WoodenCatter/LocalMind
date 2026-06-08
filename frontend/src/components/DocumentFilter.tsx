@@ -7,7 +7,8 @@ const filterOptions: Array<{ label: string; value: DocumentTypeFilter }> = [
   { label: "DOCX", value: "docx" },
   { label: "PPTX", value: "pptx" },
   { label: "TXT", value: "txt" },
-  { label: "MD", value: "md" }
+  { label: "MD", value: "md" },
+  { label: "图片", value: "image" }
 ];
 
 interface DocumentFilterProps {
@@ -24,7 +25,7 @@ export function DocumentFilter({
   onTypeChange
 }: DocumentFilterProps) {
   return (
-    <div className="mt-3 space-y-3">
+    <div className="space-y-3">
       <label className="flex items-center gap-2 rounded-md border border-neutral-200 bg-neutral-50 px-3 py-2 text-sm text-neutral-500">
         <Search size={15} className="shrink-0" />
         <input

@@ -1,4 +1,4 @@
-import type { ChatMessage as ChatMessageType } from "../types/qa";
+import type { ChatMessage as ChatMessageType, Source } from "../types/qa";
 import { MarkdownAnswer } from "./MarkdownAnswer";
 import { MessageActions } from "./MessageActions";
 import { SourceList } from "./SourceList";
@@ -7,12 +7,14 @@ interface ChatMessageProps {
   message: ChatMessageType;
   isRegenerating: boolean;
   onRegenerate: () => void;
+  onPreviewSource: (source: Source) => void;
 }
 
 export function ChatMessage({
   message,
   isRegenerating,
-  onRegenerate
+  onRegenerate,
+  onPreviewSource
 }: ChatMessageProps) {
   if (message.role === "user") {
     return (
@@ -44,7 +46,9 @@ export function ChatMessage({
         />
       </div>
       <MarkdownAnswer content={message.content} />
-      {message.sources ? <SourceList sources={message.sources} /> : null}
+      {message.sources ? (
+        <SourceList sources={message.sources} onPreview={onPreviewSource} />
+      ) : null}
     </article>
   );
 }

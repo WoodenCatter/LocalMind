@@ -17,10 +17,12 @@ class ChatHistoryMessage(BaseModel):
 
 
 class ChatHistoryResponse(BaseModel):
+    conversation_id: str | None = None
     messages: list[ChatHistoryMessage]
 
 
 class ChatHistorySaveRequest(BaseModel):
+    conversation_id: str | None = None
     messages: list[ChatHistoryMessage]
 
 

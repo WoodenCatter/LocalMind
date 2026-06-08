@@ -1,6 +1,6 @@
-import { contextBridge } from "electron";
+const { contextBridge, ipcRenderer } = require("electron");
 
 contextBridge.exposeInMainWorld("localmind", {
-  appName: "LocalMind"
+  appName: "LocalMind",
+  selectImportFiles: () => ipcRenderer.invoke("localmind:select-import-files")
 });
-

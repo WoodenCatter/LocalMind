@@ -17,9 +17,12 @@ if (-not (Test-Path $Python)) {
   --name localmind-backend `
   --onefile `
   --hidden-import hnswlib `
+  --hidden-import rank_bm25 `
+  --hidden-import jieba `
   --collect-all chromadb `
   --collect-all pypika `
   --collect-all onnxruntime `
+  --collect-all rapidocr_onnxruntime `
   --collect-all tokenizers `
   desktop_server.py
 

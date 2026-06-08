@@ -1,5 +1,18 @@
-import { Check, ExternalLink, FileText, FolderOpen, Trash2 } from "lucide-react";
+import {
+  Check,
+  Copy,
+  ExternalLink,
+  Eye,
+  FileText,
+  FolderOpen,
+  Image as ImageIcon,
+  MoveRight,
+  Trash2
+} from "lucide-react";
+import type { ReactNode } from "react";
 import type { DocumentItem } from "../types/document";
+
+const IMAGE_FILE_TYPES = new Set(["png", "jpg", "jpeg", "bmp", "webp"]);
 
 interface DocumentListProps {
   documents: DocumentItem[];
@@ -11,7 +24,10 @@ interface DocumentListProps {
   onToggleSelect: (documentId: string) => void;
   onDelete: (document: DocumentItem) => void;
   onOpen: (document: DocumentItem) => void;
+  onPreview: (document: DocumentItem) => void;
   onShowInFolder: (document: DocumentItem) => void;
+  onCopy: (document: DocumentItem) => void;
+  onMove: (document: DocumentItem) => void;
 }
 
 export function DocumentList({
@@ -24,7 +40,10 @@ export function DocumentList({
   onToggleSelect,
   onDelete,
   onOpen,
-  onShowInFolder
+  onPreview,
+  onShowInFolder,
+  onCopy,
+  onMove
 }: DocumentListProps) {
   if (isLoading) {
     return <div className="p-4 text-sm text-neutral-500">正在加载文档...</div>;
@@ -34,7 +53,7 @@ export function DocumentList({
     return (
       <div className="p-4 text-sm leading-6 text-neutral-500">
         {totalCount === 0
-          ? "还没有导入文档。点击上方按钮添加 PDF、DOCX、PPTX、TXT 或 MD 文件。"
+          ? "当前知识库还没有文档。点击上方按钮添加 PDF、DOCX、PPTX、TXT、MD 或图片文件。"
           : "没有找到匹配的文档。可以换一个关键词或文件类型。"}
       </div>
     );
@@ -45,6 +64,8 @@ export function DocumentList({
       {documents.map((document) => {
         const isSelected = selectedDocumentIds.includes(document.document_id);
         const isFileActionRunning = actionDocumentId === document.document_id;
+        const canPreview = isPreviewSupported(document.file_type);
+        const isImage = isImageFile(document.file_type);
 
         return (
           <div
@@ -72,7 +93,13 @@ export function DocumentList({
                     : "mt-0.5 flex h-8 w-8 shrink-0 items-center justify-center rounded-md bg-neutral-100 text-neutral-700"
                 }
               >
-                {isSelected ? <Check size={17} /> : <FileText size={17} />}
+                {isSelected ? (
+                  <Check size={17} />
+                ) : isImage ? (
+                  <ImageIcon size={17} />
+                ) : (
+                  <FileText size={17} />
+                )}
               </div>
               <div className="min-w-0 flex-1">
                 <p
@@ -83,49 +110,72 @@ export function DocumentList({
                 </p>
                 <div className="mt-1 flex flex-wrap items-center gap-2 text-xs text-neutral-500">
                   <span>{document.file_type.toUpperCase()}</span>
-                  <span>/</span>
-                  <span>{document.chunk_count} chunks</span>
-                  <span>/</span>
-                  <span>{document.is_indexed ? "已索引" : "未索引"}</span>
+                  {isImage ? (
+                    <>
+                      <span>/</span>
+                      <span>{getOcrLabel(document)}</span>
+                    </>
+                  ) : (
+                    <>
+                      <span>/</span>
+                      <span>{document.chunk_count} chunks</span>
+                      <span>/</span>
+                      <span>{document.is_indexed ? "已索引" : "未索引"}</span>
+                    </>
+                  )}
                 </div>
+                {isImage ? (
+                  <p className="mt-1 text-xs leading-5 text-neutral-500">
+                    {document.character_count > 0
+                      ? `提取文字：${document.character_count}字`
+                      : "未检测到可识别文字"}
+                  </p>
+                ) : null}
               </div>
-              <div className="flex shrink-0 items-center gap-1">
-                <button
-                  className="flex h-7 w-7 items-center justify-center rounded-md text-neutral-400 transition hover:bg-neutral-100 hover:text-neutral-900 disabled:opacity-50"
-                  disabled={isFileActionRunning}
-                  onClick={(event) => {
-                    event.stopPropagation();
-                    onOpen(document);
-                  }}
-                  aria-label={`打开文件 ${document.original_filename}`}
+              <div className="grid shrink-0 grid-cols-3 gap-1">
+                <IconButton
                   title="打开文件"
+                  disabled={isFileActionRunning}
+                  onClick={() => onOpen(document)}
                 >
                   <ExternalLink size={14} />
-                </button>
-                <button
-                  className="flex h-7 w-7 items-center justify-center rounded-md text-neutral-400 transition hover:bg-neutral-100 hover:text-neutral-900 disabled:opacity-50"
-                  disabled={isFileActionRunning}
-                  onClick={(event) => {
-                    event.stopPropagation();
-                    onShowInFolder(document);
-                  }}
-                  aria-label={`在文件夹中显示 ${document.original_filename}`}
+                </IconButton>
+                <IconButton
+                  title={canPreview ? "预览" : "暂不支持该格式预览"}
+                  disabled={!canPreview}
+                  onClick={() => onPreview(document)}
+                >
+                  <Eye size={14} />
+                </IconButton>
+                <IconButton
                   title="在文件夹中显示"
+                  disabled={isFileActionRunning}
+                  onClick={() => onShowInFolder(document)}
                 >
                   <FolderOpen size={14} />
-                </button>
-                <button
-                  className="flex h-7 w-7 items-center justify-center rounded-md text-neutral-400 transition hover:bg-red-50 hover:text-red-600 disabled:opacity-50"
-                  disabled={deletingId === document.document_id}
-                  onClick={(event) => {
-                    event.stopPropagation();
-                    onDelete(document);
-                  }}
-                  aria-label={`删除 ${document.original_filename}`}
-                  title="删除文档"
+                </IconButton>
+                <IconButton
+                  title="复制到知识库"
+                  disabled={isFileActionRunning}
+                  onClick={() => onCopy(document)}
                 >
-                  <Trash2 size={15} />
-                </button>
+                  <Copy size={14} />
+                </IconButton>
+                <IconButton
+                  title="移动到知识库"
+                  disabled={isFileActionRunning}
+                  onClick={() => onMove(document)}
+                >
+                  <MoveRight size={14} />
+                </IconButton>
+                <IconButton
+                  title="删除文档"
+                  danger
+                  disabled={deletingId === document.document_id}
+                  onClick={() => onDelete(document)}
+                >
+                  <Trash2 size={14} />
+                </IconButton>
               </div>
             </div>
           </div>
@@ -133,4 +183,59 @@ export function DocumentList({
       })}
     </div>
   );
+}
+
+function IconButton({
+  children,
+  danger = false,
+  disabled,
+  title,
+  onClick
+}: {
+  children: ReactNode;
+  danger?: boolean;
+  disabled?: boolean;
+  title: string;
+  onClick: () => void;
+}) {
+  return (
+    <button
+      className={
+        danger
+          ? "flex h-7 w-7 items-center justify-center rounded-md text-neutral-400 transition hover:bg-red-50 hover:text-red-600 disabled:cursor-not-allowed disabled:opacity-40"
+          : "flex h-7 w-7 items-center justify-center rounded-md text-neutral-400 transition hover:bg-neutral-100 hover:text-neutral-900 disabled:cursor-not-allowed disabled:opacity-40"
+      }
+      disabled={disabled}
+      onClick={(event) => {
+        event.stopPropagation();
+        onClick();
+      }}
+      aria-label={title}
+      title={title}
+    >
+      {children}
+    </button>
+  );
+}
+
+function isImageFile(fileType: string) {
+  return IMAGE_FILE_TYPES.has(fileType.toLowerCase());
+}
+
+function isPreviewSupported(fileType: string) {
+  return ["pdf", "txt", "md", "docx", "pptx", ...IMAGE_FILE_TYPES].includes(
+    fileType.toLowerCase()
+  );
+}
+
+function getOcrLabel(document: DocumentItem) {
+  if (document.ocr_status === "success" || document.character_count > 0) {
+    return "OCR成功";
+  }
+
+  if (document.ocr_status === "empty") {
+    return "OCR未识别到文字";
+  }
+
+  return document.is_indexed ? "OCR成功" : "OCR待处理";
 }

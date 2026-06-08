@@ -1,6 +1,5 @@
-from pathlib import Path
-
-from fastapi import APIRouter, File, Query, UploadFile, status
+from fastapi import APIRouter, File, Form, Query, UploadFile, status
+from fastapi.responses import FileResponse
 
 from app.schemas.document import (
     DocumentChunkResponse,
@@ -9,41 +8,91 @@ from app.schemas.document import (
     DocumentFileActionResponse,
     DocumentImportResponse,
     DocumentIndexResponse,
+    DocumentKnowledgeBaseResponse,
     DocumentListItem,
     DocumentListResponse,
+    DocumentPreviewResponse,
     DocumentTextExtractResponse,
     DocumentUploadResponse,
+    LocalDocumentImportRequest,
 )
-from app.services.document_chunker import chunk_extracted_text
+from app.schemas.knowledge_base import DocumentKnowledgeBaseRequest, DocumentMoveRequest
 from app.services.document_catalog import list_documents
-from app.services.document_lifecycle import delete_document
-from app.services.document_metadata import get_document_metadata, upsert_document_metadata
-from app.services.document_opener import (
-    open_managed_document,
-    show_managed_document_in_folder,
+from app.services.document_file_service import (
+    open_imported_file,
+    show_imported_file_in_folder,
 )
-from app.services.document_parser import extract_text_from_document
-from app.services.document_storage import get_supported_file_type, save_uploaded_document
-from app.services.vector_store import index_document_chunks
+from app.services.document_import_service import (
+    chunk_document_text_for_import,
+    extract_document_text_for_import,
+    import_local_document_file,
+    import_uploaded_document,
+    index_document_for_import,
+    upload_document_only,
+)
+from app.services.document_lifecycle import delete_document
+from app.services.document_metadata import get_document_metadata
+from app.services.document_preview_service import (
+    build_document_preview,
+    build_preview_file_response,
+)
+from app.services.knowledge_base_store import (
+    add_document_to_knowledge_bases,
+    document_has_knowledge_base,
+    get_default_knowledge_base_id,
+    get_document_knowledge_base_ids,
+    get_document_ids_for_knowledge_bases,
+    move_document_to_knowledge_bases,
+    remove_document_from_all_knowledge_bases,
+    remove_document_from_knowledge_base,
+)
 
 router = APIRouter(tags=["documents"])
 
 
-def _get_file_type(file: UploadFile) -> str:
-    return get_supported_file_type(file.filename)
-
-
 @router.get("", response_model=DocumentListResponse)
-def get_documents() -> DocumentListResponse:
-    documents = [
-        DocumentListItem(**document)
-        for document in list_documents()
-    ]
+def get_documents(
+    knowledge_base_id: str | None = Query(default=None),
+) -> DocumentListResponse:
+    allowed_document_ids = None
+    if knowledge_base_id:
+        allowed_document_ids = set(get_document_ids_for_knowledge_bases([knowledge_base_id]))
+
+    documents = []
+    for document in list_documents():
+        document_id = document["document_id"]
+        if allowed_document_ids is not None and document_id not in allowed_document_ids:
+            continue
+
+        documents.append(
+            DocumentListItem(
+                **document,
+                knowledge_base_ids=get_document_knowledge_base_ids(document_id),
+            )
+        )
 
     return DocumentListResponse(
         documents=documents,
         total=len(documents),
     )
+
+
+@router.get("/{document_id}/preview", response_model=DocumentPreviewResponse)
+def preview_document(
+    document_id: str,
+    page: int | None = Query(default=None),
+    chunk_index: int | None = Query(default=None),
+) -> DocumentPreviewResponse:
+    return build_document_preview(
+        document_id=document_id,
+        page=page,
+        chunk_index=chunk_index,
+    )
+
+
+@router.get("/{document_id}/preview-file")
+def preview_document_file(document_id: str) -> FileResponse:
+    return build_preview_file_response(document_id)
 
 
 @router.get("/{document_id}", response_model=DocumentDetailResponse)
@@ -54,7 +103,7 @@ def get_document(document_id: str) -> DocumentDetailResponse:
 
 @router.post("/{document_id}/open", response_model=DocumentFileActionResponse)
 def open_document_file(document_id: str) -> DocumentFileActionResponse:
-    file_path = open_managed_document(document_id)
+    file_path = open_imported_file(document_id)
     return DocumentFileActionResponse(
         document_id=document_id,
         file_path=str(file_path),
@@ -65,7 +114,7 @@ def open_document_file(document_id: str) -> DocumentFileActionResponse:
 
 @router.post("/{document_id}/show-in-folder", response_model=DocumentFileActionResponse)
 def show_document_file_in_folder(document_id: str) -> DocumentFileActionResponse:
-    file_path = show_managed_document_in_folder(document_id)
+    file_path = show_imported_file_in_folder(document_id)
     return DocumentFileActionResponse(
         document_id=document_id,
         file_path=str(file_path),
@@ -80,38 +129,7 @@ def show_document_file_in_folder(document_id: str) -> DocumentFileActionResponse
     status_code=status.HTTP_201_CREATED,
 )
 async def upload_document(file: UploadFile = File(...)) -> DocumentUploadResponse:
-    file_type = _get_file_type(file)
-
-    stored_document = await save_uploaded_document(file, file_type)
-    upsert_document_metadata(
-        {
-            "document_id": stored_document.document_id,
-            "original_filename": file.filename,
-            "stored_filename": stored_document.path.name,
-            "file_type": stored_document.file_type,
-            "content_type": file.content_type or "application/octet-stream",
-            "size": stored_document.size,
-            "page_count": 0,
-            "character_count": 0,
-            "chunk_count": 0,
-            "indexed_chunk_count": 0,
-            "is_indexed": False,
-            "file_path": str(stored_document.path),
-            "text_path": None,
-            "chunks_path": None,
-            "collection_name": None,
-        }
-    )
-
-    return DocumentUploadResponse(
-        document_id=stored_document.document_id,
-        filename=stored_document.path.name,
-        original_filename=file.filename,
-        file_type=stored_document.file_type,
-        content_type=file.content_type or "application/octet-stream",
-        size=stored_document.size,
-        is_duplicate=stored_document.is_duplicate,
-    )
+    return await upload_document_only(file)
 
 
 @router.post(
@@ -121,86 +139,63 @@ async def upload_document(file: UploadFile = File(...)) -> DocumentUploadRespons
 )
 async def import_document(
     file: UploadFile = File(...),
+    knowledge_base_ids: list[str] | None = Form(default=None),
     chunk_size: int = Query(default=1000, ge=200, le=4000),
     chunk_overlap: int = Query(default=200, ge=0, le=1000),
 ) -> DocumentImportResponse:
-    file_type = _get_file_type(file)
-
-    stored_document = await save_uploaded_document(file, file_type)
-    extracted_text = extract_text_from_document(
-        document_id=stored_document.document_id,
-        file_path=stored_document.path,
-        file_type=stored_document.file_type,
-    )
-    chunking_result = chunk_extracted_text(
-        document_id=stored_document.document_id,
+    return await import_uploaded_document(
+        file=file,
+        knowledge_base_ids=knowledge_base_ids,
         chunk_size=chunk_size,
         chunk_overlap=chunk_overlap,
     )
-    indexing_result = index_document_chunks(stored_document.document_id)
-    upsert_document_metadata(
-        {
-            "document_id": stored_document.document_id,
-            "original_filename": file.filename,
-            "stored_filename": stored_document.path.name,
-            "file_type": stored_document.file_type,
-            "content_type": file.content_type or "application/octet-stream",
-            "size": stored_document.size,
-            "page_count": extracted_text.page_count,
-            "character_count": extracted_text.character_count,
-            "chunk_count": chunking_result.chunk_count,
-            "indexed_chunk_count": indexing_result.indexed_chunk_count,
-            "is_indexed": True,
-            "file_path": str(stored_document.path),
-            "text_path": str(extracted_text.path),
-            "chunks_path": str(chunking_result.path),
-            "collection_name": indexing_result.collection_name,
-        }
+
+
+@router.post(
+    "/import-local",
+    response_model=DocumentImportResponse,
+    status_code=status.HTTP_201_CREATED,
+)
+def import_local_document(request: LocalDocumentImportRequest) -> DocumentImportResponse:
+    return import_local_document_file(request)
+
+
+@router.post("/{document_id}/copy-to-knowledge-bases", response_model=DocumentKnowledgeBaseResponse)
+def copy_document_to_knowledge_bases(
+    document_id: str,
+    request: DocumentKnowledgeBaseRequest,
+) -> DocumentKnowledgeBaseResponse:
+    list_documents()
+    knowledge_base_ids = add_document_to_knowledge_bases(
+        document_id,
+        request.knowledge_base_ids,
+    )
+    return DocumentKnowledgeBaseResponse(
+        document_id=document_id,
+        knowledge_base_ids=knowledge_base_ids,
     )
 
-    return DocumentImportResponse(
-        document_id=stored_document.document_id,
-        filename=stored_document.path.name,
-        original_filename=file.filename,
-        file_type=stored_document.file_type,
-        content_type=file.content_type or "application/octet-stream",
-        size=stored_document.size,
-        is_duplicate=stored_document.is_duplicate,
-        page_count=extracted_text.page_count,
-        character_count=extracted_text.character_count,
-        text_filename=extracted_text.path.name,
-        chunks_filename=chunking_result.path.name,
-        chunk_count=chunking_result.chunk_count,
-        indexed_chunk_count=indexing_result.indexed_chunk_count,
-        collection_name=indexing_result.collection_name,
+
+@router.post("/{document_id}/move-to-knowledge-bases", response_model=DocumentKnowledgeBaseResponse)
+def move_document_between_knowledge_bases(
+    document_id: str,
+    request: DocumentMoveRequest,
+) -> DocumentKnowledgeBaseResponse:
+    list_documents()
+    knowledge_base_ids = move_document_to_knowledge_bases(
+        document_id,
+        request.from_knowledge_base_id,
+        request.target_knowledge_base_ids,
+    )
+    return DocumentKnowledgeBaseResponse(
+        document_id=document_id,
+        knowledge_base_ids=knowledge_base_ids,
     )
 
 
 @router.post("/{document_id}/extract-text", response_model=DocumentTextExtractResponse)
 def extract_document_text(document_id: str) -> DocumentTextExtractResponse:
-    list_documents()
-    metadata = get_document_metadata(document_id)
-    extracted_text = extract_text_from_document(
-        document_id=document_id,
-        file_path=Path(metadata["file_path"]),
-        file_type=metadata["file_type"],
-    )
-    upsert_document_metadata(
-        {
-            "document_id": document_id,
-            "page_count": extracted_text.page_count,
-            "character_count": extracted_text.character_count,
-            "text_path": str(extracted_text.path),
-        }
-    )
-
-    return DocumentTextExtractResponse(
-        document_id=document_id,
-        text_filename=extracted_text.path.name,
-        page_count=extracted_text.page_count,
-        character_count=extracted_text.character_count,
-        preview=extracted_text.preview,
-    )
+    return extract_document_text_for_import(document_id)
 
 
 @router.post("/{document_id}/chunks", response_model=DocumentChunkResponse)
@@ -209,52 +204,43 @@ def chunk_document_text(
     chunk_size: int = Query(default=1000, ge=200, le=4000),
     chunk_overlap: int = Query(default=200, ge=0, le=1000),
 ) -> DocumentChunkResponse:
-    chunking_result = chunk_extracted_text(
+    return chunk_document_text_for_import(
         document_id=document_id,
         chunk_size=chunk_size,
         chunk_overlap=chunk_overlap,
-    )
-    upsert_document_metadata(
-        {
-            "document_id": document_id,
-            "chunk_count": chunking_result.chunk_count,
-            "chunks_path": str(chunking_result.path),
-        }
-    )
-
-    return DocumentChunkResponse(
-        document_id=document_id,
-        chunks_filename=chunking_result.path.name,
-        chunk_count=chunking_result.chunk_count,
-        chunk_size=chunking_result.chunk_size,
-        chunk_overlap=chunking_result.chunk_overlap,
-        first_chunk_preview=chunking_result.first_chunk_preview,
     )
 
 
 @router.post("/{document_id}/index", response_model=DocumentIndexResponse)
 def index_document(document_id: str) -> DocumentIndexResponse:
-    indexing_result = index_document_chunks(document_id)
-    upsert_document_metadata(
-        {
-            "document_id": document_id,
-            "indexed_chunk_count": indexing_result.indexed_chunk_count,
-            "is_indexed": True,
-            "collection_name": indexing_result.collection_name,
-        }
-    )
-
-    return DocumentIndexResponse(
-        document_id=document_id,
-        collection_name=indexing_result.collection_name,
-        indexed_chunk_count=indexing_result.indexed_chunk_count,
-        persist_directory=indexing_result.persist_directory,
-    )
+    return index_document_for_import(document_id)
 
 
 @router.delete("/{document_id}", response_model=DocumentDeleteResponse)
-def remove_document(document_id: str) -> DocumentDeleteResponse:
+def remove_document(
+    document_id: str,
+    knowledge_base_id: str | None = Query(default=None),
+    delete_entity: bool = Query(default=False),
+) -> DocumentDeleteResponse:
     list_documents()
+
+    if knowledge_base_id and not delete_entity:
+        if knowledge_base_id == get_default_knowledge_base_id():
+            remove_document_from_all_knowledge_bases(document_id)
+        else:
+            remove_document_from_knowledge_base(document_id, knowledge_base_id)
+        is_orphan = not document_has_knowledge_base(document_id)
+        return DocumentDeleteResponse(
+            document_id=document_id,
+            deleted_metadata=False,
+            deleted_files=[],
+            missing_files=[],
+            deleted_vector_count=0,
+            removed_knowledge_base_id=knowledge_base_id,
+            is_orphan=is_orphan,
+        )
+
+    remove_document_from_all_knowledge_bases(document_id)
     result = delete_document(document_id)
 
     return DocumentDeleteResponse(

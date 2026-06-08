@@ -8,8 +8,12 @@ export function useBackendHealth() {
   const [status, setStatus] = useState<BackendHealthStatus>("checking");
   const [error, setError] = useState<string | null>(null);
 
-  const checkHealth = useCallback(async () => {
-    setStatus("checking");
+  const checkHealth = useCallback(async (options: { showChecking?: boolean } = {}) => {
+    const showChecking = options.showChecking ?? true;
+
+    if (showChecking) {
+      setStatus("checking");
+    }
     setError(null);
 
     try {
@@ -27,10 +31,10 @@ export function useBackendHealth() {
   }, []);
 
   useEffect(() => {
-    void checkHealth();
+    void checkHealth({ showChecking: true });
 
     const timer = window.setInterval(() => {
-      void checkHealth();
+      void checkHealth({ showChecking: false });
     }, 30000);
 
     return () => window.clearInterval(timer);

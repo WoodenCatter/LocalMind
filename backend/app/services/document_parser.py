@@ -1,4 +1,5 @@
 from dataclasses import dataclass
+from functools import lru_cache
 from pathlib import Path
 
 from fastapi import HTTPException, status
@@ -41,6 +42,11 @@ def parse_document(file_path: Path, file_type: str) -> ParsedDocument:
         "pptx": _parse_pptx,
         "txt": _parse_plain_text,
         "md": _parse_plain_text,
+        "png": _parse_image_ocr,
+        "jpg": _parse_image_ocr,
+        "jpeg": _parse_image_ocr,
+        "bmp": _parse_image_ocr,
+        "webp": _parse_image_ocr,
     }
     parser = parsers.get(file_type)
     if parser is None:
@@ -173,6 +179,58 @@ def _parse_plain_text(file_path: Path) -> list[ParsedSection]:
     return [ParsedSection(page=1, text=text.strip())]
 
 
+def _parse_image_ocr(file_path: Path) -> list[ParsedSection]:
+    try:
+        ocr = _create_ocr_engine()
+        result = ocr(str(file_path))
+    except ImportError as exc:
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail="OCR dependency is not installed. Run: pip install -r requirements.txt",
+        ) from exc
+    except Exception as exc:
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail=f"OCR failed: {exc}",
+        ) from exc
+
+    texts = _extract_ocr_texts(result)
+    return [ParsedSection(page=1, text="\n".join(texts).strip())]
+
+
+@lru_cache(maxsize=1)
+def _create_ocr_engine():
+    try:
+        from rapidocr_onnxruntime import RapidOCR
+    except ImportError:
+        from rapidocr import RapidOCR
+
+    return RapidOCR()
+
+
+def _extract_ocr_texts(result) -> list[str]:
+    raw_items = result[0] if isinstance(result, tuple) else result
+
+    if hasattr(raw_items, "txts"):
+        return [str(text).strip() for text in raw_items.txts if str(text).strip()]
+
+    if raw_items is None:
+        return []
+
+    texts = []
+    for item in raw_items:
+        text = None
+        if isinstance(item, dict):
+            text = item.get("text") or item.get("rec_text")
+        elif isinstance(item, (list, tuple)) and len(item) >= 2:
+            text = item[1]
+
+        if text and str(text).strip():
+            texts.append(str(text).strip())
+
+    return texts
+
+
 def _read_text_file(file_path: Path) -> str:
     for encoding in ("utf-8", "utf-8-sig", "gb18030"):
         try:
@@ -187,6 +245,7 @@ def _format_sections(sections: list[ParsedSection]) -> str:
     return "\n\n".join(
         f"--- Page {section.page} ---\n{section.text}"
         for section in sections
+        if section.text.strip()
     ).strip()
 
 

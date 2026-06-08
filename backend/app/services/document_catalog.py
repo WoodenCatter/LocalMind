@@ -110,6 +110,11 @@ def _content_type_for(file_type: str) -> str:
         "pptx": "application/vnd.openxmlformats-officedocument.presentationml.presentation",
         "txt": "text/plain",
         "md": "text/markdown",
+        "png": "image/png",
+        "jpg": "image/jpeg",
+        "jpeg": "image/jpeg",
+        "bmp": "image/bmp",
+        "webp": "image/webp",
     }.get(file_type, "application/octet-stream")
 
 

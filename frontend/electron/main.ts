@@ -1,4 +1,4 @@
-import { app, BrowserWindow, shell } from "electron";
+import { app, BrowserWindow, dialog, ipcMain, shell } from "electron";
 import { execFileSync, spawn, type ChildProcess } from "node:child_process";
 import fs from "node:fs";
 import path from "node:path";
@@ -112,12 +112,38 @@ function createMainWindow() {
 
   if (isDevelopment && process.env.VITE_DEV_SERVER_URL) {
     mainWindow.loadURL(process.env.VITE_DEV_SERVER_URL);
-    mainWindow.webContents.openDevTools({ mode: "detach" });
     return;
   }
 
   mainWindow.loadFile(path.join(__dirname, "../dist/index.html"));
 }
+
+ipcMain.handle("localmind:select-import-files", async () => {
+  const result = await dialog.showOpenDialog({
+    title: "选择要导入 LocalMind 的文件",
+    properties: ["openFile", "multiSelections"],
+    filters: [
+      {
+        name: "Supported files",
+        extensions: ["pdf", "docx", "pptx", "txt", "md", "png", "jpg", "jpeg", "bmp", "webp"]
+      }
+    ]
+  });
+
+  if (result.canceled) {
+    return [];
+  }
+
+  return result.filePaths.map((filePath) => {
+    const stat = fs.statSync(filePath);
+    return {
+      filePath,
+      name: path.basename(filePath),
+      size: stat.size,
+      lastModified: stat.mtimeMs
+    };
+  });
+});
 
 app.whenReady().then(() => {
   startBackend();

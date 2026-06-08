@@ -8,12 +8,17 @@ export interface DocumentItem {
   uploaded_at: string;
   updated_at: string;
   page_count: number;
+  character_count: number;
   chunk_count: number;
+  indexed_chunk_count: number;
   is_indexed: boolean;
   file_path: string;
   text_path?: string | null;
   chunks_path?: string | null;
   collection_name?: string | null;
+  knowledge_base_ids: string[];
+  ocr_status?: string | null;
+  ocr_message?: string | null;
 }
 
 export interface DocumentListResponse {
@@ -36,6 +41,9 @@ export interface DocumentImportResponse {
   chunk_count: number;
   indexed_chunk_count: number;
   collection_name: string;
+  knowledge_base_ids: string[];
+  ocr_status?: string | null;
+  ocr_message?: string | null;
 }
 
 export interface DocumentDeleteResponse {
@@ -44,6 +52,8 @@ export interface DocumentDeleteResponse {
   deleted_files: string[];
   missing_files: string[];
   deleted_vector_count: number;
+  removed_knowledge_base_id?: string | null;
+  is_orphan?: boolean;
 }
 
 export interface DocumentFileActionResponse {
@@ -53,4 +63,31 @@ export interface DocumentFileActionResponse {
   success: boolean;
 }
 
-export type DocumentTypeFilter = "all" | "pdf" | "docx" | "pptx" | "txt" | "md";
+export interface DocumentPreviewResponse {
+  document_id: string;
+  filename: string;
+  file_type: string;
+  preview_supported: boolean;
+  preview_mode: "pdf" | "text" | "image" | "unsupported";
+  content?: string | null;
+  file_url?: string | null;
+  page?: number | null;
+  chunk_index?: number | null;
+  message?: string | null;
+}
+
+export interface DocumentKnowledgeBaseResponse {
+  document_id: string;
+  knowledge_base_ids: string[];
+}
+
+export interface PendingImportFile {
+  id: string;
+  name: string;
+  size: number;
+  lastModified: number;
+  file?: File;
+  filePath?: string;
+}
+
+export type DocumentTypeFilter = "all" | "pdf" | "docx" | "pptx" | "txt" | "md" | "image";

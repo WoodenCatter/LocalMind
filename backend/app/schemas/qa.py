@@ -6,7 +6,12 @@ class SearchRequest(BaseModel):
     top_k: int = Field(default=5, ge=1, le=20)
     document_id: str | None = None
     document_ids: list[str] | None = None
+    knowledge_base_ids: list[str] | None = None
+    conversation_id: str | None = None
     max_distance: float | None = Field(default=None, ge=0, le=2)
+    hybrid_search_enabled: bool = True
+    vector_candidate_count: int | None = Field(default=None, ge=1, le=100)
+    keyword_candidate_count: int | None = Field(default=None, ge=1, le=100)
 
 
 class AskRequest(BaseModel):
@@ -14,7 +19,12 @@ class AskRequest(BaseModel):
     top_k: int = Field(default=5, ge=1, le=20)
     document_id: str | None = None
     document_ids: list[str] | None = None
+    knowledge_base_ids: list[str] | None = None
+    conversation_id: str | None = None
     max_distance: float | None = Field(default=None, ge=0, le=2)
+    hybrid_search_enabled: bool = True
+    vector_candidate_count: int | None = Field(default=None, ge=1, le=100)
+    keyword_candidate_count: int | None = Field(default=None, ge=1, le=100)
 
 
 class SearchResult(BaseModel):
@@ -28,6 +38,12 @@ class SearchResult(BaseModel):
     text_preview: str = ""
     distance: float
     score: float = 0.0
+    retrieval_source: str = "vector"
+    final_score: float = 0.0
+    vector_rank: int | None = None
+    keyword_rank: int | None = None
+    vector_score: float = 0.0
+    keyword_score: float = 0.0
 
 
 class SearchResponse(BaseModel):

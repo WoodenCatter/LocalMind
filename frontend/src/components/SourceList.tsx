@@ -5,9 +5,10 @@ import { SourceCard } from "./SourceCard";
 
 interface SourceListProps {
   sources: Source[];
+  onPreview: (source: Source) => void;
 }
 
-export function SourceList({ sources }: SourceListProps) {
+export function SourceList({ sources, onPreview }: SourceListProps) {
   const [isOpen, setIsOpen] = useState(false);
 
   if (sources.length === 0) {
@@ -34,6 +35,7 @@ export function SourceList({ sources }: SourceListProps) {
               key={source.chunk_id}
               source={source}
               index={index + 1}
+              onPreview={onPreview}
             />
           ))}
         </div>

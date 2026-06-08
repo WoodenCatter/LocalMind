@@ -1,15 +1,26 @@
 import { useCallback, useEffect, useMemo, useState } from "react";
 import { getApiErrorMessage } from "../api/client";
 import {
-  deleteDocument,
+  copyDocumentToKnowledgeBases,
+  deleteDocumentEntity,
   fetchDocuments,
   importDocument,
+  importLocalDocument,
+  moveDocumentToKnowledgeBases,
   openDocument,
+  removeDocumentFromKnowledgeBase,
   showDocumentInFolder
 } from "../api/documents";
-import type { DocumentItem, DocumentTypeFilter } from "../types/document";
+import type { DocumentItem, DocumentTypeFilter, PendingImportFile } from "../types/document";
 
-export function useDocuments() {
+const DEFAULT_KNOWLEDGE_BASE_ID = "default";
+const IMAGE_FILE_TYPES = new Set(["png", "jpg", "jpeg", "bmp", "webp"]);
+
+interface RemoveDocumentOptions {
+  deleteOrphanEntity?: boolean;
+}
+
+export function useDocuments(activeKnowledgeBaseId: string | null) {
   const [documents, setDocuments] = useState<DocumentItem[]>([]);
   const [isLoading, setIsLoading] = useState(false);
   const [isUploading, setIsUploading] = useState(false);
@@ -27,7 +38,7 @@ export function useDocuments() {
     setNotice(null);
 
     try {
-      const data = await fetchDocuments();
+      const data = await fetchDocuments(activeKnowledgeBaseId);
       setDocuments(data.documents);
       setSelectedDocumentIds((current) =>
         current.filter((documentId) =>
@@ -39,22 +50,51 @@ export function useDocuments() {
     } finally {
       setIsLoading(false);
     }
-  }, []);
+  }, [activeKnowledgeBaseId]);
 
   useEffect(() => {
     void loadDocuments();
   }, [loadDocuments]);
 
   const uploadDocument = useCallback(
-    async (file: File) => {
+    async (file: File, knowledgeBaseIds: string[]) => {
       setIsUploading(true);
       setError(null);
       setNotice(null);
 
       try {
-        await importDocument(file);
+        await importDocument(file, knowledgeBaseIds);
         await loadDocuments();
-        setNotice("文档已导入。");
+        setNotice("文件已导入。");
+      } catch (currentError) {
+        setError(getApiErrorMessage(currentError));
+      } finally {
+        setIsUploading(false);
+      }
+    },
+    [loadDocuments]
+  );
+
+  const uploadDocuments = useCallback(
+    async (files: PendingImportFile[], knowledgeBaseIds: string[]) => {
+      if (files.length === 0) {
+        return;
+      }
+
+      setIsUploading(true);
+      setError(null);
+      setNotice(null);
+
+      try {
+        for (const file of files) {
+          if (file.filePath) {
+            await importLocalDocument(file.filePath, knowledgeBaseIds);
+          } else if (file.file) {
+            await importDocument(file.file, knowledgeBaseIds);
+          }
+        }
+        await loadDocuments();
+        setNotice(`已导入 ${files.length} 个文件。`);
       } catch (currentError) {
         setError(getApiErrorMessage(currentError));
       } finally {
@@ -65,32 +105,102 @@ export function useDocuments() {
   );
 
   const removeDocument = useCallback(
-    async (document: DocumentItem) => {
-      const confirmed = window.confirm(
-        `确定删除“${document.original_filename}”吗？`
-      );
-      if (!confirmed) {
+    async (document: DocumentItem, options: RemoveDocumentOptions = {}) => {
+      if (!activeKnowledgeBaseId) {
         return;
       }
 
+      const isDefaultKnowledgeBase = activeKnowledgeBaseId === DEFAULT_KNOWLEDGE_BASE_ID;
       setDeletingId(document.document_id);
       setError(null);
       setNotice(null);
 
       try {
-        await deleteDocument(document.document_id);
+        const result = await removeDocumentFromKnowledgeBase(
+          document.document_id,
+          activeKnowledgeBaseId
+        );
         setSelectedDocumentIds((current) =>
           current.filter((documentId) => documentId !== document.document_id)
         );
+
+        if (result.is_orphan) {
+          if (options.deleteOrphanEntity) {
+            await deleteDocumentEntity(document.document_id);
+            setNotice("文件实体已彻底删除。");
+          } else {
+            setNotice(
+              isDefaultKnowledgeBase
+                ? "已从所有知识库移除关联，文件实体仍保留。"
+                : "已移除知识库关联，文件实体仍保留。"
+            );
+          }
+        } else {
+          setNotice(
+            isDefaultKnowledgeBase
+              ? "已从所有知识库移除。"
+              : "已从当前知识库移除。"
+          );
+        }
+
         await loadDocuments();
-        setNotice("文档已删除。");
       } catch (currentError) {
         setError(getApiErrorMessage(currentError));
       } finally {
         setDeletingId(null);
       }
     },
+    [activeKnowledgeBaseId, loadDocuments]
+  );
+
+  const copyDocument = useCallback(
+    async (document: DocumentItem, knowledgeBaseIds: string[]) => {
+      setActionDocumentId(document.document_id);
+      setError(null);
+      setNotice(null);
+
+      try {
+        await copyDocumentToKnowledgeBases(document.document_id, knowledgeBaseIds);
+        await loadDocuments();
+        setNotice("已复制到目标知识库。");
+      } catch (currentError) {
+        setError(`复制失败：${getApiErrorMessage(currentError)}`);
+      } finally {
+        setActionDocumentId(null);
+      }
+    },
     [loadDocuments]
+  );
+
+  const moveDocument = useCallback(
+    async (document: DocumentItem, knowledgeBaseIds: string[]) => {
+      if (!activeKnowledgeBaseId) {
+        return;
+      }
+
+      setActionDocumentId(document.document_id);
+      setError(null);
+      setNotice(null);
+
+      try {
+        await moveDocumentToKnowledgeBases(
+          document.document_id,
+          activeKnowledgeBaseId,
+          knowledgeBaseIds
+        );
+        await loadDocuments();
+        setNotice(
+          activeKnowledgeBaseId === DEFAULT_KNOWLEDGE_BASE_ID
+            ? "已添加到目标知识库，默认知识库中仍然保留。"
+            : "已移动到目标知识库。"
+        );
+      } catch (currentError) {
+        setError(`移动失败：${getApiErrorMessage(currentError)}`);
+      } finally {
+        setActionDocumentId(null);
+      }
+    },
+    [activeKnowledgeBaseId, loadDocuments]
   );
 
   const openManagedDocument = useCallback(async (document: DocumentItem) => {
@@ -142,8 +252,11 @@ export function useDocuments() {
       const matchesSearch =
         !normalizedSearch ||
         document.original_filename.toLowerCase().includes(normalizedSearch);
+      const documentType = document.file_type.toLowerCase();
       const matchesType =
-        typeFilter === "all" || document.file_type.toLowerCase() === typeFilter;
+        typeFilter === "all" ||
+        (typeFilter === "image" && IMAGE_FILE_TYPES.has(documentType)) ||
+        documentType === typeFilter;
 
       return matchesSearch && matchesType;
     });
@@ -165,7 +278,10 @@ export function useDocuments() {
     setTypeFilter,
     loadDocuments,
     uploadDocument,
+    uploadDocuments,
     removeDocument,
+    copyDocument,
+    moveDocument,
     openManagedDocument,
     showManagedDocumentInFolder,
     toggleDocumentSelection,

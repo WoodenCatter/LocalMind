@@ -4,6 +4,7 @@ from fastapi.middleware.cors import CORSMiddleware
 from app.api.routes.chat import router as chat_router
 from app.api.routes.documents import router as documents_router
 from app.api.routes.health import router as health_router
+from app.api.routes.knowledge_bases import router as knowledge_bases_router
 from app.api.routes.qa import router as qa_router
 from app.api.routes.settings import router as settings_router
 from app.core.config import settings
@@ -30,3 +31,4 @@ app.include_router(documents_router, prefix="/api/documents")
 app.include_router(qa_router, prefix="/api/qa")
 app.include_router(settings_router, prefix="/api/settings")
 app.include_router(chat_router, prefix="/api/chat")
+app.include_router(knowledge_bases_router, prefix="/api")

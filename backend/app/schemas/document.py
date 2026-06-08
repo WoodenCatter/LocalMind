@@ -50,6 +50,16 @@ class DocumentImportResponse(BaseModel):
     chunk_count: int
     indexed_chunk_count: int
     collection_name: str
+    knowledge_base_ids: list[str] = []
+    ocr_status: str | None = None
+    ocr_message: str | None = None
+
+
+class LocalDocumentImportRequest(BaseModel):
+    file_path: str
+    knowledge_base_ids: list[str] = []
+    chunk_size: int = 1000
+    chunk_overlap: int = 200
 
 
 class DocumentListItem(BaseModel):
@@ -62,12 +72,17 @@ class DocumentListItem(BaseModel):
     uploaded_at: str
     updated_at: str
     page_count: int
+    character_count: int = 0
     chunk_count: int
+    indexed_chunk_count: int = 0
     is_indexed: bool
     file_path: str
     text_path: str | None = None
     chunks_path: str | None = None
     collection_name: str | None = None
+    knowledge_base_ids: list[str] = []
+    ocr_status: str | None = None
+    ocr_message: str | None = None
 
 
 class DocumentListResponse(BaseModel):
@@ -76,8 +91,7 @@ class DocumentListResponse(BaseModel):
 
 
 class DocumentDetailResponse(DocumentListItem):
-    character_count: int = 0
-    indexed_chunk_count: int = 0
+    pass
 
 
 class DocumentDeleteResponse(BaseModel):
@@ -86,6 +100,8 @@ class DocumentDeleteResponse(BaseModel):
     deleted_files: list[str]
     missing_files: list[str]
     deleted_vector_count: int
+    removed_knowledge_base_id: str | None = None
+    is_orphan: bool = False
 
 
 class DocumentFileActionResponse(BaseModel):
@@ -93,3 +109,21 @@ class DocumentFileActionResponse(BaseModel):
     file_path: str
     action: str
     success: bool
+
+
+class DocumentPreviewResponse(BaseModel):
+    document_id: str
+    filename: str
+    file_type: str
+    preview_supported: bool
+    preview_mode: str
+    content: str | None = None
+    file_url: str | None = None
+    page: int | None = None
+    chunk_index: int | None = None
+    message: str | None = None
+
+
+class DocumentKnowledgeBaseResponse(BaseModel):
+    document_id: str
+    knowledge_base_ids: list[str]

@@ -1,31 +1,36 @@
 import { Eye, EyeOff, Loader2, Settings, X } from "lucide-react";
 import { useEffect, useState } from "react";
-import type { AppSettings } from "../types/settings";
+import type { AppSettings, LLMSettingsRequest, ModelProvider } from "../types/settings";
 
 interface SettingsModalProps {
   isOpen: boolean;
   settings: AppSettings | null;
   isSaving: boolean;
+  isTesting: boolean;
   error: string | null;
+  testMessage: string | null;
   onClose: () => void;
-  onSave: (values: {
-    api_key?: string | null;
-    model: string;
-    api_base: string;
-  }) => Promise<boolean>;
+  onSave: (values: LLMSettingsRequest) => Promise<boolean>;
+  onTest: (values: LLMSettingsRequest) => Promise<boolean>;
 }
 
 export function SettingsModal({
   isOpen,
   settings,
   isSaving,
+  isTesting,
   error,
+  testMessage,
   onClose,
-  onSave
+  onSave,
+  onTest
 }: SettingsModalProps) {
-  const [apiKey, setApiKey] = useState("");
-  const [apiBase, setApiBase] = useState("https://api.deepseek.com");
-  const [model, setModel] = useState("deepseek-v4-flash");
+  const [provider, setProvider] = useState<ModelProvider>("deepseek");
+  const [deepseekApiKey, setDeepseekApiKey] = useState("");
+  const [deepseekApiBase, setDeepseekApiBase] = useState("https://api.deepseek.com");
+  const [deepseekModel, setDeepseekModel] = useState("deepseek-chat");
+  const [ollamaApiBase, setOllamaApiBase] = useState("http://localhost:11434");
+  const [ollamaModel, setOllamaModel] = useState("qwen2.5:7b");
   const [isKeyVisible, setIsKeyVisible] = useState(false);
 
   useEffect(() => {
@@ -33,9 +38,12 @@ export function SettingsModal({
       return;
     }
 
-    setApiKey("");
-    setApiBase(settings?.api_base || "https://api.deepseek.com");
-    setModel(settings?.model || "deepseek-v4-flash");
+    setProvider(settings?.provider || "deepseek");
+    setDeepseekApiKey("");
+    setDeepseekApiBase(settings?.deepseek_api_base || "https://api.deepseek.com");
+    setDeepseekModel(settings?.deepseek_model || "deepseek-chat");
+    setOllamaApiBase(settings?.ollama_api_base || "http://localhost:11434");
+    setOllamaModel(settings?.ollama_model || "qwen2.5:7b");
     setIsKeyVisible(false);
   }, [isOpen, settings]);
 
@@ -43,17 +51,29 @@ export function SettingsModal({
     return null;
   }
 
-  const save = async () => {
-    const ok = await onSave({
-      api_key: apiKey.trim() || null,
-      api_base: apiBase.trim(),
-      model: model.trim()
-    });
+  const values = buildRequest();
 
+  const save = async () => {
+    const ok = await onSave(values);
     if (ok) {
       onClose();
     }
   };
+
+  const test = async () => {
+    await onTest(values);
+  };
+
+  function buildRequest(): LLMSettingsRequest {
+    return {
+      provider,
+      deepseek_api_key: deepseekApiKey.trim() || null,
+      deepseek_api_base: deepseekApiBase.trim(),
+      deepseek_model: deepseekModel.trim(),
+      ollama_api_base: ollamaApiBase.trim(),
+      ollama_model: ollamaModel.trim()
+    };
+  }
 
   return (
     <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/30 px-4">
@@ -73,65 +93,54 @@ export function SettingsModal({
         </div>
 
         <div className="space-y-4 px-5 py-4">
-          {!settings?.has_deepseek_api_key ? (
-            <div className="rounded-md border border-amber-200 bg-amber-50 px-3 py-2 text-sm leading-6 text-amber-800">
-              请填写 DeepSeek API Key 后再使用 AI 问答功能。
-            </div>
-          ) : (
-            <div className="rounded-md border border-emerald-200 bg-emerald-50 px-3 py-2 text-sm text-emerald-700">
-              当前已配置：{settings.masked_deepseek_api_key}
-            </div>
-          )}
-
-          <label className="block space-y-1.5">
-            <span className="text-sm font-medium text-neutral-700">
-              DeepSeek API Key
-            </span>
-            <div className="flex gap-2">
-              <input
-                className="h-10 min-w-0 flex-1 rounded-md border border-neutral-200 px-3 text-sm outline-none focus:border-neutral-400"
-                type={isKeyVisible ? "text" : "password"}
-                value={apiKey}
-                onChange={(event) => setApiKey(event.target.value)}
-                placeholder={
-                  settings?.has_deepseek_api_key
-                    ? "留空则继续使用当前 Key"
-                    : "请输入 DeepSeek API Key"
-                }
+          <div className="space-y-2">
+            <span className="text-sm font-medium text-neutral-700">模型提供商</span>
+            <div className="grid grid-cols-2 gap-2">
+              <ProviderButton
+                active={provider === "deepseek"}
+                title="DeepSeek API"
+                description="云端 API，速度稳定"
+                onClick={() => setProvider("deepseek")}
               />
-              <button
-                className="flex h-10 w-10 items-center justify-center rounded-md border border-neutral-200 text-neutral-600 hover:bg-neutral-50"
-                onClick={() => setIsKeyVisible((current) => !current)}
-                type="button"
-                aria-label={isKeyVisible ? "隐藏 API Key" : "显示 API Key"}
-                title={isKeyVisible ? "隐藏" : "显示"}
-              >
-                {isKeyVisible ? <EyeOff size={16} /> : <Eye size={16} />}
-              </button>
+              <ProviderButton
+                active={provider === "ollama"}
+                title="Ollama 本地模型"
+                description="本机运行，数据更本地"
+                onClick={() => setProvider("ollama")}
+              />
             </div>
-          </label>
+          </div>
 
-          <label className="block space-y-1.5">
-            <span className="text-sm font-medium text-neutral-700">模型</span>
-            <input
-              className="h-10 w-full rounded-md border border-neutral-200 px-3 text-sm outline-none focus:border-neutral-400"
-              value={model}
-              onChange={(event) => setModel(event.target.value)}
+          {provider === "deepseek" ? (
+            <DeepSeekFields
+              settings={settings}
+              apiKey={deepseekApiKey}
+              apiBase={deepseekApiBase}
+              model={deepseekModel}
+              isKeyVisible={isKeyVisible}
+              onApiKeyChange={setDeepseekApiKey}
+              onApiBaseChange={setDeepseekApiBase}
+              onModelChange={setDeepseekModel}
+              onToggleKeyVisible={() => setIsKeyVisible((current) => !current)}
             />
-          </label>
-
-          <label className="block space-y-1.5">
-            <span className="text-sm font-medium text-neutral-700">API Base</span>
-            <input
-              className="h-10 w-full rounded-md border border-neutral-200 px-3 text-sm outline-none focus:border-neutral-400"
-              value={apiBase}
-              onChange={(event) => setApiBase(event.target.value)}
+          ) : (
+            <OllamaFields
+              apiBase={ollamaApiBase}
+              model={ollamaModel}
+              onApiBaseChange={setOllamaApiBase}
+              onModelChange={setOllamaModel}
             />
-          </label>
+          )}
 
           {error ? (
             <div className="rounded-md border border-red-200 bg-red-50 px-3 py-2 text-sm leading-6 text-red-700">
               {error}
+            </div>
+          ) : null}
+
+          {testMessage ? (
+            <div className="rounded-md border border-emerald-200 bg-emerald-50 px-3 py-2 text-sm leading-6 text-emerald-700">
+              {testMessage}
             </div>
           ) : null}
         </div>
@@ -140,14 +149,22 @@ export function SettingsModal({
           <button
             className="h-9 rounded-md border border-neutral-200 px-3 text-sm text-neutral-700 hover:bg-neutral-50"
             onClick={onClose}
-            disabled={isSaving}
+            disabled={isSaving || isTesting}
           >
             取消
           </button>
           <button
+            className="inline-flex h-9 items-center gap-2 rounded-md border border-neutral-200 bg-white px-3 text-sm font-medium text-neutral-700 hover:bg-neutral-50 disabled:cursor-not-allowed disabled:opacity-60"
+            onClick={test}
+            disabled={isSaving || isTesting}
+          >
+            {isTesting ? <Loader2 size={15} className="animate-spin" /> : null}
+            测试连接
+          </button>
+          <button
             className="inline-flex h-9 items-center gap-2 rounded-md bg-neutral-950 px-3 text-sm font-medium text-white disabled:cursor-not-allowed disabled:opacity-60"
             onClick={save}
-            disabled={isSaving}
+            disabled={isSaving || isTesting}
           >
             {isSaving ? <Loader2 size={15} className="animate-spin" /> : null}
             保存设置
@@ -155,5 +172,149 @@ export function SettingsModal({
         </div>
       </div>
     </div>
+  );
+}
+
+function ProviderButton({
+  active,
+  title,
+  description,
+  onClick
+}: {
+  active: boolean;
+  title: string;
+  description: string;
+  onClick: () => void;
+}) {
+  return (
+    <button
+      type="button"
+      className={
+        active
+          ? "rounded-md border border-neutral-950 bg-neutral-50 px-3 py-2 text-left"
+          : "rounded-md border border-neutral-200 bg-white px-3 py-2 text-left hover:bg-neutral-50"
+      }
+      onClick={onClick}
+    >
+      <span className="block text-sm font-medium text-neutral-900">{title}</span>
+      <span className="mt-1 block text-xs text-neutral-500">{description}</span>
+    </button>
+  );
+}
+
+function DeepSeekFields({
+  settings,
+  apiKey,
+  apiBase,
+  model,
+  isKeyVisible,
+  onApiKeyChange,
+  onApiBaseChange,
+  onModelChange,
+  onToggleKeyVisible
+}: {
+  settings: AppSettings | null;
+  apiKey: string;
+  apiBase: string;
+  model: string;
+  isKeyVisible: boolean;
+  onApiKeyChange: (value: string) => void;
+  onApiBaseChange: (value: string) => void;
+  onModelChange: (value: string) => void;
+  onToggleKeyVisible: () => void;
+}) {
+  return (
+    <div className="space-y-4">
+      {!settings?.has_deepseek_api_key ? (
+        <div className="rounded-md border border-amber-200 bg-amber-50 px-3 py-2 text-sm leading-6 text-amber-800">
+          DeepSeek 模式需要填写 API Key 后才能使用 AI 问答功能。
+        </div>
+      ) : (
+        <div className="rounded-md border border-emerald-200 bg-emerald-50 px-3 py-2 text-sm text-emerald-700">
+          当前已配置：{settings.masked_deepseek_api_key}
+        </div>
+      )}
+
+      <label className="block space-y-1.5">
+        <span className="text-sm font-medium text-neutral-700">DeepSeek API Key</span>
+        <div className="flex gap-2">
+          <input
+            className="h-10 min-w-0 flex-1 rounded-md border border-neutral-200 px-3 text-sm outline-none focus:border-neutral-400"
+            type={isKeyVisible ? "text" : "password"}
+            value={apiKey}
+            onChange={(event) => onApiKeyChange(event.target.value)}
+            placeholder={
+              settings?.has_deepseek_api_key
+                ? "留空则继续使用当前 Key"
+                : "请输入 DeepSeek API Key"
+            }
+          />
+          <button
+            className="flex h-10 w-10 items-center justify-center rounded-md border border-neutral-200 text-neutral-600 hover:bg-neutral-50"
+            onClick={onToggleKeyVisible}
+            type="button"
+            aria-label={isKeyVisible ? "隐藏 API Key" : "显示 API Key"}
+            title={isKeyVisible ? "隐藏" : "显示"}
+          >
+            {isKeyVisible ? <EyeOff size={16} /> : <Eye size={16} />}
+          </button>
+        </div>
+      </label>
+
+      <TextField label="DeepSeek Base URL" value={apiBase} onChange={onApiBaseChange} />
+      <TextField label="DeepSeek 模型名" value={model} onChange={onModelChange} />
+    </div>
+  );
+}
+
+function OllamaFields({
+  apiBase,
+  model,
+  onApiBaseChange,
+  onModelChange
+}: {
+  apiBase: string;
+  model: string;
+  onApiBaseChange: (value: string) => void;
+  onModelChange: (value: string) => void;
+}) {
+  return (
+    <div className="space-y-4">
+      <div className="rounded-md border border-neutral-200 bg-neutral-50 px-3 py-2 text-sm leading-6 text-neutral-600">
+        使用 Ollama 前，请先启动 Ollama，并提前拉取模型，例如：
+        <span className="ml-1 font-mono text-neutral-900">ollama pull qwen2.5:7b</span>
+      </div>
+      <TextField label="Ollama Base URL" value={apiBase} onChange={onApiBaseChange} />
+      <TextField
+        label="Ollama 模型名"
+        value={model}
+        onChange={onModelChange}
+        placeholder="qwen2.5:7b"
+      />
+    </div>
+  );
+}
+
+function TextField({
+  label,
+  value,
+  placeholder,
+  onChange
+}: {
+  label: string;
+  value: string;
+  placeholder?: string;
+  onChange: (value: string) => void;
+}) {
+  return (
+    <label className="block space-y-1.5">
+      <span className="text-sm font-medium text-neutral-700">{label}</span>
+      <input
+        className="h-10 w-full rounded-md border border-neutral-200 px-3 text-sm outline-none focus:border-neutral-400"
+        value={value}
+        placeholder={placeholder}
+        onChange={(event) => onChange(event.target.value)}
+      />
+    </label>
   );
 }
