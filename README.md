@@ -464,8 +464,10 @@ screenshots/settings.png
 Preview placeholders:
 
 ![Main window](screenshots/main-window.png)
+![Knowledge bases](screenshots/knowledge-bases.png)
 ![Chat with sources](screenshots/chat-with-sources.png)
 ![Document preview](screenshots/document-preview.png)
+![Settings](screenshots/settings.png)
 
 ## Roadmap
 
